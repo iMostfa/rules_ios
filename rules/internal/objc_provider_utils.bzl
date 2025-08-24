@@ -46,8 +46,23 @@ def _merge_objc_providers(providers, transitive = []):
 def _merge_dynamic_framework_providers(dynamic_framework_providers):
     # Bazel 8 compatibility: Check if new_dynamic_framework_provider exists
     if not hasattr(apple_common, "new_dynamic_framework_provider"):
-        # In Bazel 8, return None if the provider doesn't exist
-        return None
+        # In Bazel 8, create a struct to carry framework information
+        # This will be used to pass framework files through the build
+        framework_files = []
+        framework_dirs = []
+        
+        for dep in dynamic_framework_providers:
+            if hasattr(dep, "framework_files"):
+                framework_files.extend(dep.framework_files.to_list())
+            if hasattr(dep, "framework_dirs"):
+                framework_dirs.extend(dep.framework_dirs.to_list())
+        
+        return struct(
+            framework_files = depset(framework_files),
+            framework_dirs = depset(framework_dirs),
+            objc = apple_common.new_objc_provider(),
+            cc_info = CcInfo(),
+        )
         
     fields = {}
     merge_keys = [

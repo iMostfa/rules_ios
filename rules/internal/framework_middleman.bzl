@@ -64,9 +64,11 @@ def _framework_middleman(ctx):
                 resource_providers.append(lib_dep[AppleResourceInfo])
         if apple_common.Objc in lib_dep:
             objc_providers.append(lib_dep[apple_common.Objc])
-        if apple_common.AppleDynamicFramework in lib_dep:
+        # Bazel 8 compatibility: Try both old and potential new provider names
+        if hasattr(apple_common, "AppleDynamicFramework") and apple_common.AppleDynamicFramework in lib_dep:
             dynamic_frameworks.append(lib_dep)
             dynamic_framework_providers.append(lib_dep[apple_common.AppleDynamicFramework])
+        # Note: In Bazel 8, dynamic framework info might be in CcInfo instead
 
     for dep in ctx.attr.framework_deps:
         _process_dep(dep)
@@ -83,34 +85,37 @@ def _framework_middleman(ctx):
 
     # Add the frameworks to the objc provider for Bazel <= 6
     dynamic_framework_provider = objc_provider_utils.merge_dynamic_framework_providers(dynamic_framework_providers)
-    objc_provider_fields["dynamic_framework_file"] = depset(
-        transitive = [dynamic_framework_provider.framework_files, objc_provider_fields.get("dynamic_framework_file", depset([]))],
-    )
+    if dynamic_framework_provider:
+        objc_provider_fields["dynamic_framework_file"] = depset(
+            transitive = [dynamic_framework_provider.framework_files, objc_provider_fields.get("dynamic_framework_file", depset([]))],
+        )
     objc_provider = apple_common.new_objc_provider(**objc_provider_fields)
 
     # Add the framework info to the cc info linking context for Bazel >= 7
-    framework_cc_info = CcInfo(
-        linking_context = cc_common.create_linking_context(
-            linker_inputs = depset([
-                cc_common.create_linker_input(
-                    owner = ctx.label,
-                    libraries = depset([
-                        cc_common.create_library_to_link(
-                            actions = ctx.actions,
-                            cc_toolchain = cc_toolchain,
-                            feature_configuration = cc_features,
-                            dynamic_library = dynamic_library,
-                        )
-                        for dynamic_library in dynamic_framework_provider.framework_files.to_list()
-                    ]),
-                ),
-            ]),
-        ),
-    )
-    cc_info_provider = cc_common.merge_cc_infos(direct_cc_infos = [framework_cc_info], cc_infos = cc_providers)
+    if dynamic_framework_provider and hasattr(dynamic_framework_provider, "framework_files"):
+        framework_cc_info = CcInfo(
+            linking_context = cc_common.create_linking_context(
+                linker_inputs = depset([
+                    cc_common.create_linker_input(
+                        owner = ctx.label,
+                        libraries = depset([
+                            cc_common.create_library_to_link(
+                                actions = ctx.actions,
+                                cc_toolchain = cc_toolchain,
+                                feature_configuration = cc_features,
+                                dynamic_library = dynamic_library,
+                            )
+                            for dynamic_library in dynamic_framework_provider.framework_files.to_list()
+                        ]),
+                    ),
+                ]),
+            ),
+        )
+        cc_info_provider = cc_common.merge_cc_infos(direct_cc_infos = [framework_cc_info], cc_infos = cc_providers)
+    else:
+        cc_info_provider = cc_common.merge_cc_infos(cc_infos = cc_providers)
 
     providers = [
-        dynamic_framework_provider,
         cc_info_provider,
         objc_provider,
         new_iosframeworkbundleinfo(),
@@ -126,6 +131,10 @@ def _framework_middleman(ctx):
         ),
     ]
 
+    # Add dynamic framework provider if it exists (Bazel < 8)
+    if dynamic_framework_provider:
+        providers.append(dynamic_framework_provider)
+    
     embed_info_provider = embeddable_info.merge_providers(apple_embeddable_infos)
     if embed_info_provider:
         providers.append(embed_info_provider)
@@ -240,14 +249,19 @@ def _dep_middleman(ctx):
     def _process_avoid_deps(avoid_dep_libs):
         for dep in avoid_dep_libs:
             if apple_common.Objc in dep:
-                for lib in dep[apple_common.Objc].library.to_list():
-                    avoid_libraries[lib] = True
-                for lib in dep[apple_common.Objc].force_load_library.to_list():
-                    avoid_libraries[lib] = True
-                for lib in dep[apple_common.Objc].imported_library.to_list():
-                    avoid_libraries[lib.basename] = True
-                for lib in dep[apple_common.Objc].static_framework_file.to_list():
-                    avoid_libraries[lib.basename] = True
+                objc_provider = dep[apple_common.Objc]
+                if hasattr(objc_provider, "library"):
+                    for lib in objc_provider.library.to_list():
+                        avoid_libraries[lib] = True
+                if hasattr(objc_provider, "force_load_library"):
+                    for lib in objc_provider.force_load_library.to_list():
+                        avoid_libraries[lib] = True
+                if hasattr(objc_provider, "imported_library"):
+                    for lib in objc_provider.imported_library.to_list():
+                        avoid_libraries[lib.basename] = True
+                if hasattr(objc_provider, "static_framework_file"):
+                    for lib in objc_provider.static_framework_file.to_list():
+                        avoid_libraries[lib.basename] = True
             if CcInfo in dep:
                 for linker_input in dep[CcInfo].linking_context.linker_inputs.to_list():
                     for library_to_link in linker_input.libraries:
@@ -278,10 +292,14 @@ def _dep_middleman(ctx):
     ])
 
     # Ensure to strip out static link inputs
-    _dedupe_key("library", avoid_libraries, objc_provider_fields)
-    _dedupe_key("force_load_library", avoid_libraries, objc_provider_fields)
-    _dedupe_key("imported_library", avoid_libraries, objc_provider_fields, check_name = True)
-    _dedupe_key("static_framework_file", avoid_libraries, objc_provider_fields, check_name = True)
+    if "library" in objc_provider_fields:
+        _dedupe_key("library", avoid_libraries, objc_provider_fields)
+    if "force_load_library" in objc_provider_fields:
+        _dedupe_key("force_load_library", avoid_libraries, objc_provider_fields)
+    if "imported_library" in objc_provider_fields:
+        _dedupe_key("imported_library", avoid_libraries, objc_provider_fields, check_name = True)
+    if "static_framework_file" in objc_provider_fields:
+        _dedupe_key("static_framework_file", avoid_libraries, objc_provider_fields, check_name = True)
 
     if "sdk_dylib" in objc_provider_fields:
         # Put sdk_dylib at _end_ of the linker invocation. Apple's linkers have

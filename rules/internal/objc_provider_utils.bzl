@@ -22,12 +22,18 @@ def _merge_objc_providers_dict(providers, transitive = [], merge_keys = objc_mer
         "providers": transitive,
     }
     for key in merge_keys:
-        set = depset(
-            direct = [],
-            # Note:  we may want to merge this with the below inputs?
-            transitive = [getattr(provider, key) for provider in providers],
-        )
-        _add_to_dict_if_present(fields, key, set)
+        provider_values = []
+        for provider in providers:
+            # Check if the provider has this attribute (Bazel 8 compatibility)
+            if hasattr(provider, key):
+                provider_values.append(getattr(provider, key))
+        if provider_values:
+            set = depset(
+                direct = [],
+                # Note:  we may want to merge this with the below inputs?
+                transitive = provider_values,
+            )
+            _add_to_dict_if_present(fields, key, set)
     return fields
 
 def _merge_objc_providers(providers, transitive = []):
@@ -38,18 +44,28 @@ def _merge_objc_providers(providers, transitive = []):
     return apple_common.new_objc_provider(**objc_provider_fields)
 
 def _merge_dynamic_framework_providers(dynamic_framework_providers):
+    # Bazel 8 compatibility: Check if new_dynamic_framework_provider exists
+    if not hasattr(apple_common, "new_dynamic_framework_provider"):
+        # In Bazel 8, return None if the provider doesn't exist
+        return None
+        
     fields = {}
     merge_keys = [
         "framework_dirs",
         "framework_files",
     ]
     for key in merge_keys:
-        set = depset(
-            direct = [],
-            # Note:  we may want to merge this with the below inputs?
-            transitive = [getattr(dep, key) for dep in dynamic_framework_providers],
-        )
-        _add_to_dict_if_present(fields, key, set)
+        provider_values = []
+        for dep in dynamic_framework_providers:
+            if hasattr(dep, key):
+                provider_values.append(getattr(dep, key))
+        if provider_values:
+            set = depset(
+                direct = [],
+                # Note:  we may want to merge this with the below inputs?
+                transitive = provider_values,
+            )
+            _add_to_dict_if_present(fields, key, set)
 
     fields["objc"] = apple_common.new_objc_provider()
     fields["cc_info"] = CcInfo()

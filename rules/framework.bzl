@@ -356,7 +356,7 @@ def _get_framework_files(ctx, deps):
                 continue
 
             # collect binary files
-            if file.path.endswith(".a") or file.path.endswith(".lo"):
+            if file.path.endswith(".a"):
                 binaries_in.append(file)
 
             # collect swift specific files
@@ -1153,7 +1153,7 @@ apple_framework_packaging = rule(
     implementation = _apple_framework_packaging_impl,
     toolchains = use_cpp_toolchain(),
     cfg = transition_support.apple_rule_transition,
-    fragments = ["apple", "cpp", "objc"],
+    fragments = ["apple", "cpp", "objc", "j2objc"],
     output_to_genfiles = True,
     attrs = {
         "framework_name": attr.string(

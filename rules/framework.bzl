@@ -73,6 +73,7 @@ def apple_framework(
                                    If '//conditions:default' is not set the value in 'xcconfig'
                                    is set as default.
         **kwargs: Arguments passed to the apple_library and apple_framework_packaging rules as appropriate.
+                 Note: plugins parameter for Swift macros should be passed through kwargs.
     """
     framework_packaging_kwargs = {arg: kwargs.pop(arg) for arg in _APPLE_FRAMEWORK_PACKAGING_KWARGS if arg in kwargs}
     kwargs["enable_framework_vfs"] = kwargs.pop("enable_framework_vfs", True)

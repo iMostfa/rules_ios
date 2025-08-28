@@ -2,20 +2,20 @@
 
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("@bazel_skylib//lib:sets.bzl", "sets")
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//lib:sets.bzl", "sets")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@build_bazel_rules_apple//apple/internal:apple_framework_import.bzl", "apple_dynamic_framework_import", "apple_static_framework_import")
 load("@build_bazel_rules_apple//apple/internal/resource_rules:apple_intent_library.bzl", "apple_intent_library")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_interop_hint", "swift_library")
-load("//rules:precompiled_apple_resource_bundle.bzl", "precompiled_apple_resource_bundle")
-load("//rules:hmap.bzl", "headermap")
 load("//rules:features.bzl", "feature_names")
+load("//rules:hmap.bzl", "headermap")
+load("//rules:import_middleman.bzl", "import_middleman")
+load("//rules:precompiled_apple_resource_bundle.bzl", "precompiled_apple_resource_bundle")
+load("//rules:utils.bzl", "bundle_identifier_for_bundle")
 load("//rules/framework:vfs_overlay.bzl", "framework_vfs_overlay", VFS_OVERLAY_FRAMEWORK_SEARCH_PATH = "FRAMEWORK_SEARCH_PATH")
 load("//rules/library:resources.bzl", "wrap_resources_in_filegroup")
 load("//rules/library:xcconfig.bzl", "copts_by_build_setting_with_defaults")
-load("//rules:import_middleman.bzl", "import_middleman")
-load("//rules:utils.bzl", "bundle_identifier_for_bundle")
 
 PrivateHeadersInfo = provider(
     doc = "Propagates private headers, so they can be accessed if necessary",
@@ -499,7 +499,7 @@ def apple_library(
                                    the respective bazel build setting is resolved during the analysis phase.
         objc_defines: A list of Objective-C defines to add to the compilation command line. They should be in the form KEY=VALUE or simply KEY and are passed not only to the compiler for this target (as copts are) but also to all objc_ dependers of this target.
         swift_defines: A list of Swift defines to add to the compilation command line. Swift defines do not have values, so strings in this list should be simple identifiers and not KEY=VALUE pairs. (only expections are KEY=1 and KEY=0). These flags are added for the target and every target that depends on it.
-        **kwargs: keyword arguments.
+        **kwargs: keyword arguments. Note: plugins parameter for Swift macros should be passed through kwargs.
 
     Returns:
         Struct with a bunch of info
